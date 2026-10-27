@@ -87,44 +87,52 @@ class ImageParser:
                     logger.debug(f"使用 MessageRecorder 本地图片：{local_path.name}")
                     return data_url
 
-        if image_info.has_file_path and image_info.file_path:
-            from pathlib import Path
+        from pathlib import Path
+        from urllib.parse import unquote, urlsplit
 
-            file_path = Path(image_info.file_path)
+        # Some core adapters put their managed local path in the URL field too.
+        local_source = image_info.file_path or ""
+        if not local_source and image_info.url:
+            if image_info.url.startswith("/") or image_info.url.startswith("file:"):
+                local_source = image_info.url
+        if local_source:
+            parts = urlsplit(local_source)
+            if parts.scheme == "file":
+                if parts.netloc or parts.query or parts.fragment:
+                    logger.warning("拒绝带主机名或附加参数的本地图片 URI")
+                    return None
+                local_source = unquote(parts.path)
+            file_path = Path(local_source)
             if file_path.is_absolute():
-                # 平台消息中的绝对路径不可信，只允许读取本插件生成的图片缓存。
+                from astrbot.core.utils.astrbot_path import get_astrbot_temp_path
                 from ..config import get_config
 
+                roots = [Path(get_astrbot_temp_path())]
                 try:
-                    cache_root = get_config().data_dir / "image_cache"
-                    data_url = local_image_to_data_url(
-                        file_path, allowed_root=cache_root
-                    )
+                    roots.append(get_config().data_dir / "image_cache")
                 except RuntimeError:
-                    data_url = None
-                if data_url:
-                    logger.debug(f"使用本地文件图片：{file_path.name}")
-                    return data_url
-                logger.warning(f"本地图片文件无法读取：{image_info.file_path}")
-            elif self._recorder_bridge:
-                abs_path = self._recorder_bridge.resolve_relative_path(
-                    image_info.file_path
+                    pass
+                data_url = await asyncio.to_thread(
+                    local_image_to_data_url, file_path, allowed_roots=roots
                 )
+                if data_url:
+                    logger.debug(f"使用托管本地图片：{file_path.name}")
+                    return data_url
+                logger.warning(f"托管本地图片无法读取：{file_path.name}")
+            elif self._recorder_bridge:
+                abs_path = self._recorder_bridge.resolve_relative_path(local_source)
                 if abs_path:
-                    data_url = local_image_to_data_url(abs_path)
+                    data_url = await asyncio.to_thread(local_image_to_data_url, abs_path)
                     if data_url:
-                        logger.debug(
-                            f"通过 MessageRecorder 解析本地图片：{abs_path.name}"
-                        )
                         return data_url
 
-        if image_info.has_url:
+        # A rejected/missing local path is not a network URL. Only a genuinely
+        # separate HTTP(S) URL can take the remote fallback path.
+        if image_info.has_url and urlsplit(image_info.url).scheme.lower() in {"http", "https"}:
             data_url = await self._fetch_image_data_url(image_info.url)
             if data_url:
                 return data_url
-            logger.info(
-                f"图片 URL 不可访问或主机不安全，跳过 LLM 解析：{image_info.url[:80]}"
-            )
+            logger.info("远程图片不可用，跳过 LLM 解析")
             return None
 
         return None

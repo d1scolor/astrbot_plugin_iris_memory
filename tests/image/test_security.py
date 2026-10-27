@@ -284,3 +284,65 @@ def test_cleanup_only_deletes_files_inside_configured_cache(tmp_path: Path):
     assert not cached.exists()
     assert outside.exists()
     assert symlink_escape.is_symlink()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,uri", [("file_path", False), ("url", False), ("url", True)])
+async def test_parser_accepts_astrbot_managed_temp_image(tmp_path: Path, field, uri):
+    from unittest.mock import AsyncMock
+
+    temp = tmp_path / "core-temp"
+    temp.mkdir()
+    image = temp / "image.png"
+    image.write_bytes(PNG_BYTES)
+    source = image.as_uri() if uri else str(image)
+    parser = ImageParser(Mock())
+    parser._fetch_image_data_url = AsyncMock()
+    with patch("astrbot.core.utils.astrbot_path.get_astrbot_temp_path", return_value=str(temp)), patch(
+        "astrbot_plugin_iris_memory.iris_memory.config.get_config",
+        return_value=SimpleNamespace(data_dir=tmp_path / "plugin"),
+    ):
+        result = await parser._resolve_image_url(ImageInfo(**{field: source}))
+    assert result.startswith("data:image/png;base64,")
+    parser._fetch_image_data_url.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_parser_rejects_temp_symlink_escape_and_never_fetches_path(tmp_path: Path):
+    from unittest.mock import AsyncMock
+
+    temp = tmp_path / "core-temp"
+    temp.mkdir()
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(PNG_BYTES)
+    escape = temp / "escape.png"
+    escape.symlink_to(outside)
+    parser = ImageParser(Mock())
+    parser._fetch_image_data_url = AsyncMock()
+    with patch("astrbot.core.utils.astrbot_path.get_astrbot_temp_path", return_value=str(temp)), patch(
+        "astrbot_plugin_iris_memory.iris_memory.config.get_config",
+        return_value=SimpleNamespace(data_dir=tmp_path / "plugin"),
+    ):
+        for path in [escape, outside, temp / "missing.png"]:
+            assert await parser._resolve_image_url(ImageInfo(file_path=str(path), url=str(path))) is None
+    parser._fetch_image_data_url.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rejected_local_image_can_use_distinct_safe_remote_source(tmp_path: Path):
+    from unittest.mock import AsyncMock
+
+    parser = ImageParser(Mock())
+    parser._fetch_image_data_url = AsyncMock(return_value="data:image/png;base64,synthetic")
+    result = await parser._resolve_image_url(ImageInfo(file_path=str(tmp_path / "missing.png"), url="https://example.org/image.png"))
+    assert result == "data:image/png;base64,synthetic"
+    parser._fetch_image_data_url.assert_awaited_once_with("https://example.org/image.png")
+
+
+def test_managed_roots_still_reject_non_images_and_oversized_inputs(tmp_path: Path):
+    image = tmp_path / "fake.png"
+    image.write_text("not an image")
+    assert local_image_to_data_url(image, allowed_roots=[tmp_path]) is None
+    image.write_bytes(PNG_BYTES)
+    assert local_image_to_data_url(image, allowed_roots=[tmp_path], max_bytes=4) is None
+    assert local_image_to_data_url(image, allowed_roots=[]) is None

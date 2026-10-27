@@ -281,12 +281,16 @@ def local_image_to_data_url(
     file_path: Path,
     *,
     allowed_root: Optional[Path] = None,
+    allowed_roots: Optional[list[Path]] = None,
     max_bytes: int = MAX_IMAGE_BYTES,
 ) -> Optional[str]:
     """受限读取本地图片；可选要求真实路径位于指定根目录。"""
     try:
         resolved = file_path.resolve(strict=True)
-        if allowed_root is not None and not is_path_within(resolved, allowed_root):
+        roots = list(allowed_roots) if allowed_roots is not None else None
+        if allowed_root is not None:
+            roots = [allowed_root] if roots is None else [allowed_root, *roots]
+        if roots is not None and not any(is_path_within(resolved, root) for root in roots):
             logger.warning(f"本地图片越过允许目录，拒绝读取：{file_path}")
             return None
         if not resolved.is_file():

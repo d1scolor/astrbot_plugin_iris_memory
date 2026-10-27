@@ -136,3 +136,14 @@ Dashboard and tool-registration tests, plus new Markdown ownership and budget
 checks. No live provider or QQ deployment validation is claimed. Compilation and
 focused lint checks pass; inherited files retain upstream lint findings outside
 the scope of this patch.
+
+## Managed image paths (v3.2.3)
+
+Image parsing accepts local images only in the plugin image_cache or AstrBot's
+managed temp directory, resolved through get_astrbot_temp_path() rather than a
+hardcoded deployment path. Absolute paths and local file URIs in platform-derived
+ImageInfo fields are supported. Real-path containment, existing size limits and
+image magic validation remain enforced; symlinks escaping both roots are rejected.
+Rejected or expired local paths are no longer attempted as network URLs. A separate
+HTTP(S) source can still use the existing public-network-only downloader. Temp
+files remain owned by AstrBot; this patch does not delete them or enable shell access.
