@@ -75,6 +75,10 @@ def test_dashboard_serializes_plugin_origin(dashboard_service):
     plugin._register_llm_tools()
 
     for tool in context.provider_manager.llm_tools.func_list:
-        payload = dashboard_service._serialize_tool(tool, config_entries=[])
+        import inspect
+        kwargs = {"config_entries": []}
+        if "perms_store" in inspect.signature(dashboard_service._serialize_tool).parameters:
+            kwargs["perms_store"] = {}
+        payload = dashboard_service._serialize_tool(tool, **kwargs)
         assert payload["origin"] == "plugin"
         assert payload["origin_name"] == "astrbot_plugin_iris_memory"

@@ -260,19 +260,19 @@
     "items": {
       "enable_group_memory_isolation": {
         "type": "bool",
-        "default": false,
+        "default": true,
         "description": "启用群聊记忆隔离",
         "hint": "各群聊记忆独立存储，关闭则全局共享"
       },
       "enable_group_isolation": {
         "type": "bool",
-        "default": false,
+        "default": true,
         "description": "启用群聊用户画像隔离",
         "hint": "各群聊用户画像独立存储，关闭则全局共享，切换会导致用户画像重建"
       },
       "enable_persona_isolation": {
         "type": "bool",
-        "default": false,
+        "default": true,
         "description": "启用bot人格隔离",
         "hint": "不同bot人格的记忆与画像按人格ID逻辑隔离（共享底层存储、命名空间互不可见）；切换人格仅改变可见数据，不删除或重建"
       }
@@ -356,7 +356,7 @@
     "items": {
       "enable_conversation_cleanup": {
         "type": "bool",
-        "default": true,
+        "default": false,
         "description": "启用上下文接管",
         "hint": "开启后，每次 LLM 请求前自动清空 AstrBot 内置对话历史(req.contexts)，上下文完全由本插件的记忆系统提供。保留对话 ID 以兼容 AstrBot 主动回复功能。关闭后 AstrBot 将保留并使用内置对话历史"
       }
@@ -377,7 +377,7 @@
         "type": "bool",
         "default": false,
         "description": "启用主动发起话题",
-        "hint": "开启后 Iris 会在群冷场或话题结束时主动开启新话题"
+        "hint": "开启后 Iris 会在群冷场或话题结束时主动开启新话题；本分支建议保持关闭，仅使用消息驱动接话。"
       },
       "stats_enabled": {
         "type": "bool",
@@ -391,6 +391,34 @@
         "description": "决策模型 Provider",
         "hint": "主动回复统一决策使用的模型，留空则使用默认 Provider",
         "_special": "select_provider"
+      },
+      "dry_run": {
+        "type": "bool",
+        "default": true,
+        "description": "观察模式：仅记录是否会接话，不发送主动回复"
+      },
+      "group_whitelist": {
+        "type": "list",
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "description": "参与群白名单（/sid 的完整 UMO）；空列表禁止主动接话"
+      },
+      "reply_cooldown_seconds": {
+        "type": "int",
+        "default": 90,
+        "description": "主动接话尝试的最短间隔（秒）"
+      },
+      "reply_window_seconds": {
+        "type": "int",
+        "default": 900,
+        "description": "主动接话滚动窗口（秒）"
+      },
+      "reply_limit": {
+        "type": "int",
+        "default": 3,
+        "description": "滚动窗口内最多主动接话尝试次数"
       }
     }
   },

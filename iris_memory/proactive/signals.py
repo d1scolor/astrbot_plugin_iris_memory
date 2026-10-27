@@ -54,7 +54,7 @@ class SignalGate:
         达到最小静默底线后按风险率进行一次独立概率试验；风险率综合静默
         时长、回复意愿、话题状态和无人接话疲劳，不存在必然点火阈值。
         """
-        if not self._config.enabled or not self._config.proactive_enabled:
+        if self._config.dry_run or not self._config.enabled or not self._config.proactive_enabled:
             return None
         data = self._state.get_state(group_id)
         if data.state == GroupState.COOLDOWN:

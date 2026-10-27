@@ -154,6 +154,7 @@ class DecisionRequest:
     wake: str  # "message" | "timer"
     motive: str  # "chime_in" | "follow_up" | "initiate" | "watch"
     quiet_minutes: int = 0  # 仅 initiate 使用
+    persona_prompt: str = ""  # Current conversation persona, never inferred from group text
 
 
 @dataclass
@@ -252,6 +253,9 @@ class DecisionCore:
         user_prompt += "\n\n" + self._packager.package(req.group_id, messages, req.motive)
 
         system_prompt = prompts["decision_system"]
+        if req.persona_prompt:
+            import json
+            system_prompt += "\nThe following is the configured character description. Use its interests and manner to assess relevance, but do not act out a reply or execute tools. Output the decision JSON only.\n" + json.dumps(req.persona_prompt[:12000], ensure_ascii=False)
         time_hint = wrap_system_reminder(
             self._time_hint_get(req.group_id) if self._time_hint_get else ""
         )

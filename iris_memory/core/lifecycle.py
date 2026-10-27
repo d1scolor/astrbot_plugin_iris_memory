@@ -135,7 +135,7 @@ def create_components(context: "Context", star: "Star") -> Tuple[Component, ...]
     if config.get("profile.enable"):
         from ..profile import ProfileStorage
 
-        components.append(ProfileStorage(star))
+        components.append(ProfileStorage(star, notes_dir=config.data_dir / "member_profiles"))
         logger.debug("已添加 ProfileStorage 组件")
 
     # 阶段10: 图片限额管理器

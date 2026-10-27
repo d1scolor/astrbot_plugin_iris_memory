@@ -10,6 +10,8 @@ import asyncio
 import functools
 import inspect
 from contextlib import asynccontextmanager
+from pathlib import Path
+from .member_notes import MemberNotes
 
 from ..core import Component, get_logger
 from ..core.storage import KVStorage
@@ -99,7 +101,7 @@ class ProfileStorage(Component):
         _is_available: 组件是否可用
     """
 
-    def __init__(self, storage: KVStorage):
+    def __init__(self, storage: KVStorage, notes_dir: Path | None = None):
         """初始化画像存储组件
 
         Args:
@@ -107,6 +109,7 @@ class ProfileStorage(Component):
         """
         super().__init__()
         self._storage = storage
+        self._notes = MemberNotes(notes_dir) if notes_dir is not None else None
         # RMW 串行化锁：按画像命名空间（persona/group/user）分配，避免并发丢失更新
         self._locks: dict = {}
         self._locks_guard = asyncio.Lock()
@@ -233,6 +236,7 @@ class ProfileStorage(Component):
         group_id: str = "default",
         increment_version: bool = True,
         persona_id: str = "default",
+        manual: bool = False,
     ) -> None:
         if not self._is_available:
             return
@@ -244,14 +248,37 @@ class ProfileStorage(Component):
         key = f"user_profile:{persona_id}:{group_id}:{profile.user_id}"
 
         try:
+            if not manual:
+                old = await self._storage.get_kv_data(key, None)
+                if isinstance(old, dict):
+                    for field, meta in old.get("field_meta", {}).items():
+                        if field in USER_PROFILE_WRITABLE_FIELDS and meta.get("source") == "manual":
+                            setattr(profile, field, old.get(field))
+                            profile.field_meta[field] = meta
             data = profile_to_dict(profile)
             await self._storage.put_kv_data(key, data)
             await self._add_to_user_index(profile.user_id, group_id, persona_id)
             await self._add_to_persona_index(persona_id)
+            if self._notes:
+                try:
+                    await asyncio.to_thread(self._notes.snapshot, persona_id, group_id, profile.user_id, data)
+                except (OSError, ValueError, UnicodeError):
+                    logger.warning("Member notes unavailable; stored profile is retained")
             logger.debug(f"保存用户画像成功: {key}, version={profile.version}")
 
         except Exception as e:
             logger.error(f"保存用户画像失败: {key}, 错误: {e}")
+
+    async def human_notes(self, user_id: str, group_id: str, persona_id: str = "default") -> str:
+        if not self._notes:
+            return ""
+        try:
+            if await self.get_user_profile(user_id, group_id, persona_id) is None:
+                await self.save_user_profile(UserProfile(user_id=user_id), group_id, increment_version=False, persona_id=persona_id)
+            return await asyncio.to_thread(self._notes.read, self._effective_persona(persona_id), group_id, user_id)
+        except (OSError, ValueError, UnicodeError):
+            logger.warning("Member notes unavailable; skipping notes injection")
+            return ""
 
     def _effective_persona(self, persona_id: str) -> str:
         """规范化 persona_id
@@ -358,9 +385,12 @@ class ProfileStorage(Component):
                 for key, value in updates.items():
                     if key in USER_PROFILE_WRITABLE_FIELDS:
                         setattr(profile, key, value)
+                        meta = profile.get_field_meta(key)
+                        meta.record_update(1.0, source="manual")
+                        profile.set_field_meta(key, meta)
 
                 await self.save_user_profile(
-                    profile, group_id=group_id, persona_id=persona_id
+                    profile, group_id=group_id, persona_id=persona_id, manual=True
                 )
 
             logger.info(f"更新用户画像成功: {user_id}@{group_id}")
@@ -547,6 +577,8 @@ class ProfileStorage(Component):
 
         try:
             await self._storage.delete_kv_data(key)
+            if self._notes:
+                await asyncio.to_thread(self._notes.delete, persona_id, group_id, user_id)
             logger.info(f"已删除用户画像: {key}")
             return True
 
@@ -605,6 +637,8 @@ class ProfileStorage(Component):
                     await self._storage.delete_kv_data(
                         f"user_profile:{persona_id}:{group_id}:{user_id}"
                     )
+                    if self._notes:
+                        await asyncio.to_thread(self._notes.delete, persona_id, group_id, user_id)
                     deleted += 1
                 if user_ids:
                     await self._storage.delete_kv_data(
@@ -642,6 +676,8 @@ class ProfileStorage(Component):
                         await self._storage.delete_kv_data(
                             f"user_profile:{persona_id}:{group_id}:{user_id}"
                         )
+                        if self._notes:
+                            await asyncio.to_thread(self._notes.delete, persona_id, group_id, user_id)
                         deleted += 1
                     if user_ids:
                         await self._storage.delete_kv_data(

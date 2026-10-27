@@ -30,6 +30,8 @@ from typing import Any, Optional
 
 from .iris_memory.config import init_config, Config
 
+from .iris_memory.proactive.participation_budget import ParticipationBudget
+
 from astrbot.api import AstrBotConfig
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.message_components import At
@@ -209,6 +211,7 @@ class IrisMemoryPlugin(Star):
             self._passive_active: dict[str, float] = {}
             self._triggering: dict[str, float] = {}
             self._decision_tickets = DecisionTicketRegistry(_IRIS_ACTIVE_TIMEOUT)
+            self._participation_budget = ParticipationBudget()
             self._passive_watch_last: dict[str, float] = {}
             self._passive_watch_hash: dict[str, str] = {}
             self._follow_pending: set[str] = set()
@@ -396,6 +399,7 @@ class IrisMemoryPlugin(Star):
                 logger.error("旧数据迁移失败（不影响插件启动）", exc_info=True)
 
         # 3. 主动回复侧初始化
+        self._participation_budget.load(await self._kv_load("fork:participation_budget"))
         await self._state.load_all(self._kv_load)
         umo_data = await self._kv_load(_UMO_KV_KEY)
         if isinstance(umo_data, dict):
@@ -797,8 +801,7 @@ class IrisMemoryPlugin(Star):
 
         event.is_at_or_wake_command = True
         event.is_wake = True
-        if provider_id:
-            event.set_extra("selected_provider", provider_id)
+        # Judge selection must not override AstrBot's conversation reply provider.
         self._tool_ctx.set_context(group_id)
         logger.info(
             f"Iris Reply: {motive} candidate activated for group {group_id}, deferred to on_llm_request"
@@ -936,7 +939,22 @@ class IrisMemoryPlugin(Star):
                 event.stop_event()
                 return True
 
-        req = DecisionRequest(group_id=group_id, wake="message", motive=motive)
+        whitelist = self._reply_config.group_whitelist
+        budget_reason = self._participation_budget.check(group_id, **self._reply_config.participation_limits())
+        if event.unified_msg_origin not in whitelist or budget_reason != "allowed":
+            logger.info("Iris participation blocked: reason=%s", "group_not_enabled" if event.unified_msg_origin not in whitelist else budget_reason)
+            self._release_decision_ticket(group_id, ticket_id)
+            event.stop_event()
+            return True
+
+        persona_prompt = ""
+        try:
+            persona = await self.context.persona_manager.get_default_persona_v3(event.unified_msg_origin)
+            if isinstance(persona, dict):
+                persona_prompt = persona.get("prompt", "") or ""
+        except Exception:
+            logger.warning("Participation judge could not resolve the current persona")
+        req = DecisionRequest(group_id=group_id, wake="message", motive=motive, persona_prompt=persona_prompt)
         outcome = await self._decision_core.decide(req, self._llm_manager, provider_id)
 
         if outcome.error or outcome.decision is None:
@@ -969,7 +987,7 @@ class IrisMemoryPlugin(Star):
         decision = outcome.decision
         logger.info(
             f"Iris Reply: decision raw for group {group_id} (motive={motive}, "
-            f"len={len(outcome.raw_text)}): {outcome.raw_text:.500s}"
+            f"len={len(outcome.raw_text)})"
         )
         self._stats.record_decision(
             group_id, motive,
@@ -984,6 +1002,12 @@ class IrisMemoryPlugin(Star):
             f"drifted={decision.drifted}, watch={decision.watch}, "
             f"watch_keywords={decision.watch_keywords}, cooldown={decision.cooldown_minutes}"
         )
+
+        if self._reply_config.dry_run:
+            logger.info("Iris participation dry-run: would_speak=%s motive=%s parse_failed=%s", decision.should_speak and not decision.parse_failed and not decision.cooldown_minutes and not decision.drifted, motive, decision.parse_failed)
+            self._release_decision_ticket(group_id, ticket_id)
+            event.stop_event()
+            return True
 
         async with self._state.get_lock(group_id):
             if decision.observation:
@@ -1054,11 +1078,19 @@ class IrisMemoryPlugin(Star):
             event.stop_event()
             return True
 
+        self._participation_budget.reserve(group_id)
+        # Reserve before generation, conservatively counting failures as attempts.
+        try:
+            await self._kv_save("fork:participation_budget", self._participation_budget.entries)
+        except Exception:
+            logger.warning("Participation budget persistence failed; suppressing reply")
+            self._release_decision_ticket(group_id, ticket_id)
+            event.stop_event()
+            return True
         self._reply_in_progress[group_id] = time.time()
         self._release_decision_ticket(group_id, ticket_id)
 
         event.set_extra("iris_mode", motive)
-        event.set_extra("iris_llm_provider_id", provider_id)
         event.set_extra("iris_decision_obs", decision.observation)
 
         hint = SPEAK_HINTS.get(motive, SPEAK_HINTS["chime_in"])

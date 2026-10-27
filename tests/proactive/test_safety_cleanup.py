@@ -121,10 +121,14 @@ class TestRuntimeSafetyPaths:
         plugin._decision_core = core
         plugin._stats = Mock()
         plugin._triggering = {GID: 10.0}
+        from astrbot_plugin_iris_memory.iris_memory.proactive.participation_budget import ParticipationBudget
+        plugin._participation_budget = ParticipationBudget()
+        plugin._reply_config = ConfigManager({"proactive": {"dry_run": False, "group_whitelist": ["test-group"]}})
         plugin._kv_save = AsyncMock()
 
         event = Mock()
         event.get_group_id.return_value = GID
+        event.unified_msg_origin = "test-group"
         event.get_extra.return_value = {
             "motive": "chime_in",
             "provider_id": "provider",
@@ -162,10 +166,14 @@ class TestRuntimeSafetyPaths:
         plugin._decision_core = core
         plugin._stats = Mock()
         plugin._triggering = {GID: 10.0}
+        from astrbot_plugin_iris_memory.iris_memory.proactive.participation_budget import ParticipationBudget
+        plugin._participation_budget = ParticipationBudget()
+        plugin._reply_config = ConfigManager({"proactive": {"dry_run": False, "group_whitelist": ["test-group"]}})
         plugin._kv_save = AsyncMock()
 
         event = Mock()
         event.get_group_id.return_value = GID
+        event.unified_msg_origin = "test-group"
         event.get_extra.return_value = {
             "motive": "chime_in",
             "provider_id": "provider",
@@ -274,6 +282,7 @@ class TestResetPaths:
         plugin._kv_save = AsyncMock()
         event = Mock()
         event.get_group_id.return_value = GID
+        event.unified_msg_origin = "test-group"
 
         await plugin.cmd_reset(event)
 

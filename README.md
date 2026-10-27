@@ -1,3 +1,5 @@
+> This is d1scolor’s fork. See [FORK.md](FORK.md) for protected Markdown member notes, isolation defaults and the dry-run participation pilot. Upstream documentation follows.
+
 # Iris Memory - 三合一智能陪伴
 > 面向 AstrBot 的轻量化三合一智能陪伴插件：记忆、主动回复、人格自学习迭代。
 

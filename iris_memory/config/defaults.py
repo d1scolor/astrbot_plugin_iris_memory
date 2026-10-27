@@ -67,9 +67,9 @@ class ProfileConfig:
 class IsolationConfig:
     """隔离配置"""
 
-    enable_group_memory_isolation: bool = False
-    enable_group_isolation: bool = False
-    enable_persona_isolation: bool = False
+    enable_group_memory_isolation: bool = True
+    enable_group_isolation: bool = True
+    enable_persona_isolation: bool = True
 
 
 @dataclass
@@ -94,7 +94,7 @@ class ScheduledTasksConfig:
 class ContextControlConfig:
     """上下文控制配置"""
 
-    enable_conversation_cleanup: bool = True
+    enable_conversation_cleanup: bool = False
 
 
 @dataclass

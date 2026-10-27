@@ -484,7 +484,7 @@ class UserProfileManager:
         meta = profile.get_field_meta("bot_relationship")
         meta.record_update(1.0, source="manual")
         profile.set_field_meta("bot_relationship", meta)
-        await self._storage.save_user_profile(profile, group_id, persona_id=persona_id)
+        await self._storage.save_user_profile(profile, group_id, persona_id=persona_id, manual=True)
         logger.info(f"设置用户对bot的关系: {user_id} -> {relationship}")
 
     @profile_lock("user")

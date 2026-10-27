@@ -103,7 +103,7 @@ class TestTimerGate:
             base_overrides.update(overrides)
         return _build(
             nm_config,
-            cfg={"proactive": {"proactive_enabled": True}},
+            cfg={"proactive": {"proactive_enabled": True, "dry_run": False}},
             overrides=base_overrides,
         )
 

@@ -84,12 +84,10 @@ class TestConfig:
         )
         defaults_flat = self._flatten_defaults(Defaults())
 
-        schema_only = set(schema_flat) - set(defaults_flat) - {
-            "proactive.enabled",
-            "proactive.proactive_enabled",
-            "proactive.stats_enabled",
-            "proactive.provider_id",
-        }
+        from astrbot_plugin_iris_memory.iris_memory.proactive.config import _SCHEMA_KEYS
+        schema_only = set(schema_flat) - set(defaults_flat) - {f"proactive.{key}" for key in _SCHEMA_KEYS}
+        for key in _SCHEMA_KEYS:
+            assert schema_flat.get(f"proactive.{key}") == reply_defaults.get(key)
         assert not schema_only, f"schema 存在 Defaults 未覆盖的键：{schema_only}"
 
         for key, schema_value in schema_flat.items():

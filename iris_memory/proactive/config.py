@@ -8,6 +8,11 @@ from astrbot.api import AstrBotConfig
 
 _DEFAULTS = {
     "enabled": True,
+    "dry_run": True,
+    "reply_cooldown_seconds": 90,
+    "reply_window_seconds": 900,
+    "reply_limit": 3,
+    "group_whitelist": [],
     "stats_enabled": False,
     "mute_period": {
         "start_hour": 1,
@@ -43,7 +48,7 @@ _DEFAULTS = {
 
 # _conf_schema.json 中 proactive 分组内的面板键（嵌套存储，面板管理）
 _SCHEMA_GROUP = "proactive"
-_SCHEMA_KEYS = {"enabled", "proactive_enabled", "stats_enabled", "provider_id"}
+_SCHEMA_KEYS = {"enabled", "proactive_enabled", "stats_enabled", "provider_id", "dry_run", "reply_cooldown_seconds", "reply_window_seconds", "reply_limit", "group_whitelist"}
 
 # 页面管理键 → 隐藏配置键（HiddenConfig 字段名）。
 # 主动发起类键名与隐藏配置字段同名，基本参数类加 reply_ 前缀，
@@ -314,3 +319,22 @@ class ConfigManager:
     @property
     def proactive_max_message_len(self) -> int:
         return max(50, min(1000, int(self._get("proactive_max_message_len"))))
+
+    @property
+    def dry_run(self) -> bool:
+        return self._get("dry_run") is not False
+
+    @property
+    def group_whitelist(self) -> list[str]:
+        value = self._get("group_whitelist", [])
+        return [str(v) for v in value] if isinstance(value, list) else []
+
+    def participation_limits(self) -> dict:
+        def integer(key, low, high):
+            try:
+                return max(low, min(high, int(self._get(key))))
+            except (TypeError, ValueError, OverflowError):
+                return _DEFAULTS[key]
+        return {"cooldown": integer("reply_cooldown_seconds", 10, 3600),
+                "window": integer("reply_window_seconds", 60, 3600),
+                "limit": integer("reply_limit", 1, 100)}
